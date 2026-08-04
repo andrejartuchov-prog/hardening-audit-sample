@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>A working sample of the audit — run end to end on a public codebase</title>
+<style>
+:root{
+  --bg:#fff; --fg:#1a2130; --muted:#5b6678; --line:#e6e9ef; --soft:#f6f8fb;
+  --accent:#1f47b0; --accent-soft:#eef3ff;
+  --warn-b:#b5851f; --warn-bg:#fdf8ec; --warn-ink:#8e6918;
+  --ok-b:#2f7a43; --ok-bg:#eef7f0;
+  --maxw:780px;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px 96px}
+header.hero{border-bottom:1px solid var(--line);margin-bottom:40px;padding:64px 0 34px}
+h1{font-family:var(--serif);font-size:38px;line-height:1.2;margin:0 0 14px;letter-spacing:-.01em}
+h2{font-family:var(--serif);font-size:26px;line-height:1.28;margin:56px 0 14px;letter-spacing:-.01em}
+h3{font-size:17px;margin:30px 0 8px}
+p{margin:0 0 14px}
+.lede{font-size:18.5px;color:var(--muted);margin:0}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 16px}
+.muted{color:var(--muted)}
+code{font-family:var(--mono);font-size:.9em;background:var(--soft);padding:1px 5px;border-radius:4px}
+.frame{border:1px solid var(--line);border-radius:12px;padding:18px 20px;background:var(--soft);margin:18px 0}
+.frame.warn{border-color:var(--warn-b);background:var(--warn-bg)}
+.frame.note{border-style:dashed;background:var(--bg)}
+.finding{border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:20px 0}
+.finding h3{margin-top:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.tag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:2px 9px;color:var(--muted);background:var(--bg);white-space:nowrap}
+.tag.p0{border-color:#c04b4b;color:#a83a3a}
+.tag.p1{border-color:var(--warn-b);color:var(--warn-ink)}
+.finding dl{margin:12px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:8px 16px}
+.finding dt{font-family:var(--mono);font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.finding dd{margin:0}
+.finding dd p{margin:0 0 10px}
+.finding dd p:last-child{margin-bottom:0}
+.hook{margin:14px 0 0;padding:13px 16px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;font-size:15px}
+
+/* ── ФЛАГМАН: несущий экран ─────────────────────────────────────────── */
+.flagship{margin:26px 0 34px}
+@media(min-width:1180px){.flagship{margin-inline:-140px}}
+.exhibit{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0 0 26px;background:var(--bg)}
+.exhibit-head{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--soft)}
+.exhibit-head b{font-family:var(--serif);font-size:19px;font-weight:600}
+.exhibit-head .sub{display:block;color:var(--muted);font-size:14.5px;margin-top:3px}
+.panes{display:grid;grid-template-columns:1fr 1fr}
+@media(max-width:860px){.panes{grid-template-columns:1fr}}
+.pane{padding:0;min-width:0}
+.pane + .pane{border-left:1px solid var(--line)}
+@media(max-width:860px){.pane + .pane{border-left:0;border-top:1px solid var(--line)}}
+.pane-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:11px 18px 0}
+pre{margin:0;padding:12px 18px 18px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;tab-size:2}
+pre .del{color:#a83a3a}
+pre .add{color:#2f7a43}
+pre .hdr{color:var(--muted)}
+pre .hi{color:#1a2130;font-weight:600}
+.verdict{display:flex;gap:10px;align-items:baseline;padding:13px 20px;border-top:1px solid var(--line);background:var(--ok-bg);font-size:14.5px;flex-wrap:wrap}
+.verdict .dot{width:9px;height:9px;border-radius:50%;background:var(--ok-b);flex:none;align-self:center}
+.verdict b{color:var(--ok-b)}
+.verdict .ba{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.why{padding:16px 20px;border-top:1px solid var(--line);font-size:15px}
+.why b{font-weight:600}
+.why p{margin:0 0 10px}
+.why p:last-child{margin:0}
+.axes{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:18px 0}
+.axis{display:grid;grid-template-columns:240px 1fr;gap:16px;padding:14px 20px}
+@media(max-width:600px){.axis{grid-template-columns:1fr;gap:4px}}
+.axis + .axis{border-top:1px solid var(--line)}
+.axis .n{font-family:var(--mono);font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding-top:2px}
+footer{border-top:1px solid var(--line);margin-top:64px;padding-top:20px;color:var(--muted);font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══ S1 · WHAT THIS IS ══════════════════════════════════════════════ -->
+<header class="hero">
+  <p class="eyebrow">Hardening audit · a sample run</p>
+  <h1>A working sample of the audit — run end to end on a public codebase</h1>
+  <p class="lede">Before you hand anyone your platform, you should be able to see how they work. So instead of describing my method, I ran it.</p>
+</header>
+
+<p>The subject is an open-source FastAPI payments and subscriptions platform of the same class as yours — Python, PostgreSQL, multi-tenant, real money paths, a large test suite. It is public, so I can show the work in full; it is not your system, and I say that plainly.</p>
+
+<p>To be exact about what this is and is not: <b>this is that platform's code, not yours.</b> I have not seen your platform. Nothing on this page is a claim about it, and nothing here predicts what I would find in it. What this page shows is depth and method — how I look, what I look for, and what a finding looks like by the time it reaches you.</p>
+
+<div class="frame warn">
+  <p style="margin:0">One thing worth saying up front: this is a mature, security-minded codebase — not a soft target. Tenant isolation is genuinely strong, capability tokens are hashed at rest, and the obvious classes of defect simply are not there. The findings below are the ones that survived that scrutiny — and that is the point. On a system that is well built and well tested, the failures that remain are not sloppy ones. They are structural, and they are invisible to tests that pass.</p>
+</div>
+
+<div class="frame note">
+  <p style="margin:0" class="muted">The subject is a real open-source payments platform; I do not name it, and I have anonymized file and symbol names — I don't publish identifiable unpatched findings about third parties. This is anonymization, not staging: the run, the mutations and the test output are real.</p>
+</div>
+
+<!-- ══ S2 · THREE FINDINGS ════════════════════════════════════════════ -->
+<h2>Three findings, in the shape you would receive them</h2>
+<p>Each one below is delivered the way every finding in your report would be: priority, what is broken, how to reproduce it, how to fix it. Three are shown here out of thirteen — picked to span the method rather than to stack up severity.</p>
+
+<div class="finding">
+  <h3><span class="tag p0">P0</span><span class="tag">Security</span> Rate limiting can be switched off by the caller</h3>
+  <dl>
+    <dt>What's broken</dt>
+    <dd>
+      <p>The rate limiter counts requests per caller. It works out who the caller is from the token or session cookie attached to the request — before checking whether that credential is real. Every distinct value counts as a distinct caller, so an attacker who sends a fresh piece of junk on each request lands in a fresh counter every time and the limit never accumulates.</p>
+      <p>The junk request is not rejected either. An unrecognized session cookie is treated as anonymous rather than refused, so the request carries on to the endpoint — and anonymous is all these endpoints need.</p>
+      <p>This is the platform's only anti-brute-force control, and it sits in front of login, one-time email codes, TOTP, backup codes, customer-portal sessions, checkout confirmation and license-key validation.</p>
+    </dd>
+    <dt>How to reproduce</dt>
+    <dd>Take one rate-limited public endpoint and call it a hundred times as an ordinary client: the limiter engages after six requests and blocks for fifteen minutes. Repeat the same hundred calls, changing the session cookie to a new random value each time. Zero blocks. Every request is served.</dd>
+    <dt>How to fix</dt>
+    <dd>Identify unauthenticated callers by their network peer, not by a value they choose. Any credential that does not resolve to a real subject should collapse into one shared bucket per IP, so rotating junk cannot mint new counters. Use a token as identity only after it has been validated.</dd>
+  </dl>
+</div>
+
+<div class="finding">
+  <h3><span class="tag p0">P0</span><span class="tag">Money correctness</span> The same payment event can be processed twice</h3>
+  <dl>
+    <dt>What's broken</dt>
+    <dd>
+      <p>Every incoming payment event passes one guard: it asks whether the event has been handled, runs the handler, and marks the event handled only afterwards. Between the question and the mark there is no lock and no atomic claim. The worker commits once, at the very end — so a second attempt that begins in the meantime cannot see the first one's mark, passes the same check, and repeats the same side effects. This single guard stands in front of roughly twenty handlers, successful payments, charges, refunds and disputes among them.</p>
+      <p>Two entirely ordinary things trigger it. The queue delivers at least once by design and re-sends a message whose visibility window expires while the first attempt is still running. And a support action in the back office can re-queue an event that is already being processed.</p>
+    </dd>
+  </dl>
+  <p class="hook">The project itself carries an admission of this race in its own code: a comment in the payment path says, in as many words, that another worker may have created the transaction after the check was made. This is not an auditor's hypothesis — it is an acknowledged property of the system that was never closed at the webhook gate.</p>
+  <dl>
+    <dt>How to reproduce</dt>
+    <dd>Take a stored payment event that has not been marked handled, and run its handler twice concurrently from two separate database sessions. Both pass the check, both perform the side effects, both mark it done. Without touching the code at all: hold the handler longer than the queue's visibility window, and the queue re-sends the message on its own.</dd>
+    <dt>How to fix</dt>
+    <dd>Claim the event atomically instead of checking a flag: one conditional update that marks it handled only if it was not already, and stop if the claim returns nothing. The project already uses row-level locking in eight other places, so this is its own established pattern — it was simply never carried through to the webhook gate.</dd>
+  </dl>
+</div>
+
+<div class="finding">
+  <h3><span class="tag p1">P1</span><span class="tag">Data &amp; compliance</span> Tax can silently come out as zero</h3>
+  <dl>
+    <dt>What's broken</dt>
+    <dd>The tax calculation has two modes: raise an error, or quietly return zero. Quiet is the default. The module's own comment explains why that is dangerous — draft orders created off-session save the result and never recalculate it, so a silent zero becomes a completed sale with no tax on it, and the caller is expected to surface the error instead. Strict mode is passed explicitly in exactly one place, while the shared path that computes order amounts calls the function without the flag — which means quietly.</dd>
+  </dl>
+  <p class="hook">This is a class of defect worth naming on its own: a default is making a decision that nobody chose.</p>
+  <dl>
+    <dt>How to reproduce</dt>
+    <dd>Make the tax provider fail on a subscription order — an incomplete address is enough. The order saves with tax at zero, a warning goes to the log, and nothing surfaces to the caller or to the customer.</dd>
+    <dt>How to fix</dt>
+    <dd>Remove the default and make the flag required, so every call site has to state out loud whether a silent zero is acceptable there. At the moment that decision is being made by omission.</dd>
+  </dl>
+</div>
+
+<!-- ══ S3 · FLAGSHIP — несущий экран ══════════════════════════════════ -->
+<h2>A green test with the right name guarantees nothing</h2>
+<p class="lede" style="margin-bottom:14px">The right question about any green suite is whether it is actually checking the code. It has a concrete answer: break the logic on purpose, and see whether the suite notices.</p>
+<p>I did that twice on that same codebase. Both times I measured against a baseline first — without one, "green after the change" proves nothing, because the suite could have been red before it.</p>
+
+<div class="flagship">
+
+  <!-- M1 · MONEY -->
+  <div class="exhibit">
+    <div class="exhibit-head">
+      <b>Money — the rule that stops a customer spending more credit than they have</b>
+      <span class="sub">A single clamp in a single function. I did not delete it — I added an early return in front of it, for exactly the case where the balance is smaller than the order, so the clamp below is never reached.</span>
+    </div>
+    <div class="panes">
+      <div class="pane">
+        <div class="pane-label">Broken on purpose — product code</div>
+<pre><span class="hdr">--- billing/amounts.py (upstream)
++++ billing/amounts.py (MUTATED)</span>
+ def apply_credit_balance(total_amount, customer_balance):
+     if total_amount &gt;= 0:
+<span class="add">+        if 0 &lt; customer_balance &lt; total_amount:
++            return -total_amount</span>
+         return -min(total_amount, customer_balance)
+     if customer_balance &lt; 0:
+         return min(-total_amount, -customer_balance)
+     return 0</pre>
+      </div>
+      <div class="pane">
+        <div class="pane-label">The same test suite, after the change</div>
+<pre>$ pytest tests/billing/test_service.py
+
+<span class="hi">176 passed</span>, 442 warnings in 52.41s
+PYTEST_RC=0
+
+<span class="hdr"># baseline, untouched code:
+# 176 passed · rc=0</span></pre>
+      </div>
+    </div>
+    <div class="verdict"><span class="dot"></span><span><b>Tests green before AND after.</b></span> <span class="ba">Before: 176 passed · After: 176 passed</span></div>
+    <div class="why">
+      <p>In production this means a customer holding $10 of credit settles a $50 order entirely with credit — the order is paid, and nothing remains to charge.</p>
+      <p><b>Why the suite stayed quiet:</b> that function has four dedicated tests. They pin the matrix of signs — order positive or negative, balance positive or negative. Not one of them sets an amount where the clamp matters; in every fixture the balance already exceeds the order. The tests check that the sign is right. They never check that the limit exists.</p>
+    </div>
+  </div>
+
+  <!-- M2 · ACCESS -->
+  <div class="exhibit">
+    <div class="exhibit-head">
+      <b>Access — tenant isolation removed for one kind of caller</b>
+      <span class="sub">Requests made with a tenant's token. Everything else in the system left untouched.</span>
+    </div>
+    <div class="panes">
+      <div class="pane">
+        <div class="pane-label">Broken on purpose — product code</div>
+<pre><span class="hdr">--- billing/repository.py (upstream)
++++ billing/repository.py (MUTATED)</span>
+ elif is_tenant_token(caller):
+<span class="del">-     statement = statement.where(
+-         Order.tenant_id == caller.subject.id,
+-     )</span>
+<span class="add">+     pass</span>
+ elif is_end_customer(caller):
+     customer = caller.subject
+     statement = statement.where(</pre>
+      </div>
+      <div class="pane">
+        <div class="pane-label">The same test suite, after the change</div>
+<pre>$ pytest tests/billing/
+
+<span class="hi">252 passed</span>, 518 warnings in 71.12s
+PYTEST_RC=0
+
+<span class="hdr"># baseline, untouched code:
+# 252 passed · rc=0</span></pre>
+      </div>
+    </div>
+    <div class="verdict"><span class="dot"></span><span><b>Tests green before AND after.</b></span> <span class="ba">Before: 252 passed · After: 252 passed</span></div>
+    <div class="why">
+      <p>In production that is a cross-tenant leak — one seller's ordinary API token reading every other seller's orders, amounts and customers.</p>
+      <p><b>Why the suite stayed quiet:</b> there are four tests named <code>test_cross_tenant_order_access_denied</code>, so isolation looks covered. All four run as a <i>user</i>. The code branches on four kinds of caller, and the tenant branch is covered only by a test that its own data is visible — never that someone else's is not. The test is named after the subject and exercises one path out of four.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="frame">
+  <p style="margin:0"><b>What both have in common, in one line:</b> a test only checks what is observable in its own data. If no fixture contains the case where a protection fires, that protection can be deleted and nothing turns red.</p>
+</div>
+
+<p>That is the check I run against a large green suite — not whether the tests pass, but which of them would fail if the logic underneath them were wrong.</p>
+
+<!-- ══ S4 · METHOD — FOUR AXES ════════════════════════════════════════ -->
+<h2>How the audit is organized</h2>
+<p>Four axes.</p>
+
+<div class="axes">
+  <div class="axis"><div class="n">1 · Security</div><div>Authentication and sessions, multi-tenant isolation in the application and in the database, payment and webhook paths, secrets, injection and XSS, rate limiting.</div></div>
+  <div class="axis"><div class="n">2 · Data &amp; compliance</div><div>How PII is handled, data privacy in GDPR-class terms, cross-border transfer, retention.</div></div>
+  <div class="axis"><div class="n">3 · Correctness</div><div>Settlement and refund money logic — the highest-stakes path in a system like this — and whether the green tests are meaningfully green.</div></div>
+  <div class="axis"><div class="n">4 · Reliability &amp; code quality</div><div>Error handling, N+1 queries, oversized functions, resilience.</div></div>
+</div>
+
+<p>Every finding arrives in the shape you saw above: priority, what is broken, how to reproduce it, how to fix it — with reproductions that run rather than reproductions that are described. Where an axis comes back clean, that is a result too, and it ships with the evidence that the check actually ran. A finished audit is coverage of the agreed checks, not a tally of holes.</p>
+
+<p>The work runs on a scoped read-only copy, without production access and without production secrets.</p>
+
+<footer>
+  <p style="margin:0">Subject of this run: an open-source payments platform of the same class as the systems I audit. No client code, systems or data were involved at any point.</p>
+</footer>
+
+</div>
+</body>
+</html>
